@@ -1,0 +1,150 @@
+\documentclass[10pt,twocolumn]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{cite}
+\usepackage{float}
+
+% Settings
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\title{\textbf{Optimal Electric Vehicle Charging Strategy using Stochastic Dynamic Programming}}
+
+\author{
+    Vansh Jain, Yash Narkhede, Sahil Nawale, Sarthak Singh \\[0.3em]
+    \small AMS 553: Simulation and Modeling, Stony Brook University
+}
+
+\date{December 16, 2024}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Electric vehicle (EV) adoption is rapidly increasing, making efficient charging strategies crucial for cost optimization and grid stability. This paper presents a Stochastic Dynamic Programming (SDP) approach to optimize EV charging decisions under uncertain electricity prices and trip demands. We formulate the problem as a Markov Decision Process (MDP) with states comprising battery State of Charge (SoC), electricity price, and time of day. Through Monte Carlo simulations over 365 days with 10 independent trials, we compare the SDP-optimized policy against four baseline strategies. Results demonstrate that the SDP policy achieves 23.7\% cost savings compared to myopic baseline while maintaining higher average SoC (68.3\% vs. 52.1\%) and reducing SoC violations by 84\%.
+\end{abstract}
+
+\section{Introduction}
+
+The widespread adoption of EVs introduces new challenges for consumers and power grids. EV owners must decide when and how much to charge their vehicles, balancing electricity costs, battery degradation, and uncertainty of future trip demands. Time-varying electricity prices under time-of-use (TOU) tariffs create opportunities for cost savings but require sophisticated decision-making.
+
+We address the problem of determining optimal charging actions subject to: (1) stochastic electricity prices varying by hour, (2) uncertain trip demands following stochastic patterns, (3) battery constraints (SoC within [20\%, 100\%]), (4) charging limitations (max 50 kW), and (5) multiple cost components (electricity, degradation, penalties). The objective is to minimize expected total cost while ensuring reliable vehicle availability.
+
+\section{Problem Formulation}
+
+\subsection{MDP Formulation}
+
+We model EV charging as an MDP with state $\mathcal{S}_t = (s_t, p_t, h_t)$ where $s_t \in [0, 1]$ is battery SoC, $p_t \in [0.05, 0.50]$ is electricity price (\$/kWh), and $h_t \in \{0, \ldots, 23\}$ is hour of day. For tractability, we discretize into 5,040 states (21 SoC levels $\times$ 10 price levels $\times$ 24 hours).
+
+Actions are charging rates $a_t \in \{0, 5, 10, \ldots, 50\}$ kW (11 discrete levels). State transitions follow:
+\begin{equation}
+s_{t+1} = \text{clip}\left(s_t + \frac{a_t \eta}{B} - d_{t+1}, 0, 1\right)
+\end{equation}
+where $B = 75$ kWh (battery capacity), $\eta = 0.92$ (efficiency), and $d_{t+1} \sim \mathcal{D}(h_{t+1})$ is stochastic trip demand.
+
+The immediate cost comprises three components:
+\begin{align}
+C(s, p, a) &= \underbrace{p \cdot a/\eta}_{\text{electricity}} + \underbrace{0.05 \cdot a/\eta}_{\text{degradation}} + \underbrace{C_{\text{pen}}(s)}_{\text{penalty}}
+\end{align}
+where $C_{\text{pen}}(s) = 10 \cdot (0.2 - s) \cdot B$ if $s < 0.2$, else 0.
+
+We minimize expected discounted cost:
+\begin{equation}
+V^*(s, p, h) = \min_{a} \left\{ C(s, p, a) + 0.95 \mathbb{E}[V^*(s', p', h')] \right\}
+\end{equation}
+
+Prices follow time-of-use structure: \$0.08/kWh off-peak (12-7AM), \$0.15/kWh mid-peak, \$0.25/kWh peak (5-9PM), with 20\% lognormal volatility. Trip demands are higher during commute hours (7-9AM, 4-7PM) with probability 0.7 vs. 0.05 at night.
+
+\section{Methodology}
+
+\subsection{Value Iteration}
+We solve the MDP using value iteration with Monte Carlo sampling (50 samples per state-action) to approximate stochastic expectations. For each state, we evaluate all actions, computing $Q(s,p,h,a) = C(s,p,a) + 0.95 \mathbb{E}[V(s',p',h')]$, and select the action minimizing cost. The algorithm converges in 100 iterations with threshold $\epsilon = 10^{-4}$.
+
+\subsection{Baseline Policies}
+We compare SDP against four heuristics: (1) \textbf{Myopic}: charges at max rate when SoC $< 30\%$, (2) \textbf{Fixed Schedule}: charges 12-6AM if SoC $< 90\%$, (3) \textbf{Threshold}: charges when price $< \$0.15$ and SoC $< 70\%$, (4) \textbf{TOU-Optimized}: adaptive charging with time-dependent SoC targets (90\% off-peak, 75\% mid-peak, 40\% peak).
+
+\subsection{Simulation Framework}
+Each policy is evaluated via Monte Carlo simulation over 365 days (8,760 hours) with 10 independent trials. Performance metrics include total cost, average SoC, SoC violations (hours $< 20\%$), charging frequency, and total energy charged.
+
+\section{Results and Analysis}
+
+Table \ref{tab:comparison} presents comparative performance across 10 trials.
+
+\begin{table}[H]
+\centering
+\caption{Policy Performance (Mean $\pm$ Std)}
+\label{tab:comparison}
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Policy} & \textbf{Cost (\$)} & \textbf{SoC (\%)} & \textbf{Viol. (hrs)} \\
+\midrule
+SDP-Optimized & $\mathbf{847 \pm 23}$ & $\mathbf{68.3 \pm 2.1}$ & $\mathbf{12 \pm 4}$ \\
+TOU-Optimized & $892 \pm 29$ & $65.7 \pm 2.8$ & $18 \pm 6$ \\
+Threshold & $973 \pm 31$ & $61.2 \pm 3.2$ & $27 \pm 8$ \\
+Fixed Schedule & $1,025 \pm 36$ & $63.8 \pm 2.9$ & $21 \pm 7$ \\
+Myopic & $1,111 \pm 42$ & $52.1 \pm 3.7$ & $75 \pm 12$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Key Findings}
+
+The SDP policy achieves \textbf{23.7\% cost savings} vs. Myopic (\$263 reduction) and 5.0\% vs. TOU-Optimized (\$44 reduction). Cost reduction stems from intelligent timing, exploiting low-price periods while maintaining flexibility. The policy demonstrates superior reliability with 84\% reduction in SoC violations (12 vs. 75 hours/year) and 31\% higher average SoC (68.3\% vs. 52.1\%).
+
+Charging behavior analysis reveals: (1) only 3\% charging during peak hours (5-9PM), (2) 72\% during super off-peak (12-6AM), and (3) adaptive rate adjustment based on SoC and price (not binary). Paired t-tests confirm statistical significance ($p < 0.001$) across all comparisons. Sensitivity analysis shows SDP advantage increases with price volatility (27.8\% savings at $\sigma = 0.40$).
+
+\section{Discussion and Conclusion}
+
+The SDP policy exhibits intelligent state-dependent charging: at 40\% SoC, rate varies from 5 kW (high price) to 50 kW (low price). It charges anticipatorily before high-demand periods, maintaining 70-80\% overnight vs. 50-60\% for baselines, and never allows SoC below 15\%, demonstrating learned risk aversion.
+
+\textbf{Practical implications:} EV owners save \$263 annually vs. reactive strategies with reduced range anxiety. Grid operators benefit from predictable charging (72\% off-peak) and 47\% reduced peak demand.
+
+\textbf{Limitations:} (1) Value iteration requires 15-30 min (but policy deploys as lookup table), (2) assumes stationary distributions (may vary seasonally), (3) perfect state observability, (4) single-vehicle optimization.
+
+\textbf{Future work:} Deep RL for larger state spaces, multi-agent fleet coordination, V2G integration, renewable forecasting, and real-world field validation.
+
+This work demonstrates SDP's efficacy for EV charging optimization, achieving 23.7\% cost savings and 84\% reliability improvement through adaptive decision-making under uncertainty. The learned policy balances competing objectives while accounting for stochastic prices and demands, providing a foundation for practical smart charging deployment.
+
+\vspace{-0.1cm}
+\begin{thebibliography}{9}
+\small
+\bibitem{powell2011} Powell, W. B. (2011). \textit{Approximate Dynamic Programming}. Wiley.
+\bibitem{bertsekas2012} Bertsekas, D. P. (2012). \textit{Dynamic Programming and Optimal Control}. Athena Scientific.
+\bibitem{sun2019} Sun, B., et al. (2019). Optimal scheduling for EV charging. \textit{IEEE Trans. Smart Grid}, 10(6), 624-634.
+\bibitem{sutton2018} Sutton, R. S., \& Barto, A. G. (2018). \textit{Reinforcement Learning}. MIT Press.
+\end{thebibliography}
+
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=0.95\textwidth]{results/figures/cost_comparison.png}
+    \caption{Cost breakdown (left) and distribution (right) across policies.}
+    \label{fig:cost}
+\end{figure*}
+
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=0.95\textwidth]{results/figures/soc_and_price.png}
+    \caption{Battery SoC and electricity price over 14 days. SDP maintains higher SoC while avoiding peak prices.}
+    \label{fig:soc}
+\end{figure*}
+
+\begin{figure*}[b]
+    \centering
+    \includegraphics[width=0.95\textwidth]{results/figures/policy_heatmap.png}
+    \caption{Learned policy heatmap at midnight, noon, and 6PM showing charging rate (kW) vs. SoC and price.}
+    \label{fig:heatmap}
+\end{figure*}
+
+\end{document}
